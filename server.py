@@ -11,10 +11,14 @@ from flwr.common import FitRes, Scalar, Parameters
 from flwr.server.strategy import FedAvg
 from flwr.common import Metrics
 from centralized import Net
+from flwr.server.client_manager import ClientManager
 import flwr as fl
 
 DEVICE = torch.device("cuda")
 net = Net().to(DEVICE)
+num_clients=2
+
+
 
 class SaveModelStrategy(fl.server.strategy.FedAvg):
     def aggregate_fit(
@@ -24,7 +28,7 @@ class SaveModelStrategy(fl.server.strategy.FedAvg):
         failures: List[Union[Tuple[ClientProxy, FitRes], BaseException]],
     ) -> Tuple[Optional[Parameters], Dict[str, Scalar]]:
         """Aggregate model weights using weighted average and store checkpoint"""
-
+    
         # Call aggregate_fit from base class (FedAvg) to aggregate parameters and metrics
         aggregated_parameters, aggregated_metrics = super().aggregate_fit(server_round, results, failures)
 
@@ -41,9 +45,29 @@ class SaveModelStrategy(fl.server.strategy.FedAvg):
 
             # Save the model
             torch.save(net.state_dict(), f"model_round_{server_round}.pth")
-
+            
+            
+            
+            
         return aggregated_parameters, aggregated_metrics
     
+    def initialize_parameters(
+        self, client_manager: ClientManager
+    ) -> Optional[Parameters]:
+        """Initialize global model parameters."""
+        
+        list_of_files = [fname for fname in glob.glob("./model_round_*")]
+        latest_round_file = max(list_of_files, key=os.path.getctime)
+        print("Loading pre-trained model from: ", latest_round_file)
+        state_dict = torch.load(latest_round_file)
+        net.load_state_dict(state_dict)
+        state_dict_ndarrays = [v.cpu().numpy() for v in net.state_dict().values()]
+        parameters = fl.common.ndarrays_to_parameters(state_dict_ndarrays)
+        initial_parameters = self.initial_parameters
+        self.initial_parameters =parameters  
+        return initial_parameters
+    
+
 # Define metric aggregation function
 def weighted_average(metrics: List[Tuple[int, Metrics]]) -> Metrics:
     # Multiply accuracy of each client by number of examples used
@@ -52,17 +76,24 @@ def weighted_average(metrics: List[Tuple[int, Metrics]]) -> Metrics:
 
     # Aggregate and return custom metric (weighted average)
     return {"accuracy": sum(accuracies) / sum(examples)}
+    
+    
+    
+
+    
+
+
 
 
 # Define strategy
 strategy = SaveModelStrategy(
     fraction_fit=1.0,
     fraction_evaluate=0.5,
-    min_fit_clients=2,
-    min_evaluate_clients=1,
-    min_available_clients=2,
-    evaluate_metrics_aggregation_fn=weighted_average,
-    )
+    min_fit_clients=num_clients,
+    min_evaluate_clients=num_clients/2,
+    min_available_clients=num_clients,
+    evaluate_metrics_aggregation_fn=weighted_average
+)
 
 
 # Define config
@@ -85,10 +116,4 @@ if __name__ == "__main__":
         config=config,
         strategy=strategy,
     )
-    list_of_files = [fname for fname in glob.glob("./model_round_*")]
-    latest_round_file = max(list_of_files, key=os.path.getctime)
-    print("Loading pre-trained model from: ", latest_round_file)
-    state_dict = torch.load(latest_round_file)
-    net.load_state_dict(state_dict)
-    state_dict_ndarrays = [v.cpu().numpy() for v in net.state_dict().values()]
-    parameters = fl.common.ndarrays_to_parameters(state_dict_ndarrays)
+    

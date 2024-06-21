@@ -3,15 +3,11 @@ import warnings
 from collections import OrderedDict
 
 from flwr.client import NumPyClient, ClientApp
-from flwr_datasets import FederatedDataset
 import flwr as fl
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.utils.data import DataLoader
-from torchvision.transforms import Compose, Normalize, ToTensor
+
 from tqdm import tqdm
-from centralized import Net, train, test
+from centralized import Net, train, test,load_datasets
 
 warnings.filterwarnings("ignore", category=UserWarning)
 DEVICE = torch.device("cuda")
@@ -22,27 +18,7 @@ print(
 NUM_CLIENTS=2
 BATCH_SIZE=32
 
-def load_datasets(partition_id):
-    fds = FederatedDataset(dataset='cifar10', partitioners={"train": NUM_CLIENTS}, shuffle=True, seed=42)
 
-    def apply_transform(batch):
-        transform = Compose(
-            [
-                ToTensor(),
-                Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-            ]
-        )
-        batch["img"] = [transform(img) for img in batch["img"]]
-        return batch
-
-    partition = fds.load_partition(partition_id)
-    partition = partition.train_test_split(train_size=.8, seed=42)
-    partition = partition.with_transform(apply_transform)
-   
-    trainloader = DataLoader(partition["train"], shuffle=True, batch_size=BATCH_SIZE)
-    valloader = DataLoader(partition["test"], batch_size=BATCH_SIZE)
-        
-    return trainloader, valloader
 
 choices = list(map(int, range(NUM_CLIENTS)))
 
@@ -81,7 +57,7 @@ class FlowerClient(NumPyClient):
 
     def fit(self, parameters, config):
         self.set_parameters(parameters)
-        train(self.net, self.trainloader, epochs=5, verbose=True)
+        train(self.net, self.trainloader, epochs=6, verbose=True)
         return self.get_parameters(config={}), len(self.trainloader.dataset), {}
 
     def evaluate(self, parameters, config):
