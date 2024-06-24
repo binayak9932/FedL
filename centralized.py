@@ -13,6 +13,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchvision.transforms import Compose, Normalize, ToTensor
+from torchvision import transforms
 from flwr_datasets import FederatedDataset
 
 
@@ -24,8 +25,17 @@ DEVICE = torch.device("cuda")
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 class Net(nn.Module):
     def __init__(self) -> None:
+    def __init__(self):
         super(Net, self).__init__()
         self.conv1 = nn.Conv2d(3, 6, 5)
+        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, padding=1)
+        self.bn1 = nn.BatchNorm2d(64)
+        self.conv2 = nn.Conv2d(64, 128, kernel_size=3, padding=1)
+        self.bn2 = nn.BatchNorm2d(128)
+        self.conv3 = nn.Conv2d(128, 256, kernel_size=3, padding=1)
+        self.bn3 = nn.BatchNorm2d(256)
+        self.conv4 = nn.Conv2d(256, 512, kernel_size=3, padding=1)
+        self.bn4 = nn.BatchNorm2d(512)
         self.pool = nn.MaxPool2d(2, 2)
         self.conv2 = nn.Conv2d(6, 16, 5)
         self.fc1 = nn.Linear(16 * 5 * 5, 120)
@@ -41,6 +51,21 @@ class Net(nn.Module):
         x = x.view(-1, 16 * 5 * 5)
         x = self.relu3(self.fc1(x))
         x = self.relu4(self.fc2(x))
+        self.fc1 = nn.Linear(512 * 2 * 2, 1024)
+        self.fc2 = nn.Linear(1024, 512)
+        self.fc3 = nn.Linear(512, 10)
+        self.dropout = nn.Dropout(0.5)
+
+    def forward(self, x):
+        x = self.pool(torch.relu(self.bn1(self.conv1(x))))
+        x = self.pool(torch.relu(self.bn2(self.conv2(x))))
+        x = self.pool(torch.relu(self.bn3(self.conv3(x))))
+        x = self.pool(torch.relu(self.bn4(self.conv4(x))))
+        x = x.view(-1, 512 * 2 * 2)
+        x = torch.relu(self.fc1(x))
+        x = self.dropout(x)
+        x = torch.relu(self.fc2(x))
+        x = self.dropout(x)
         x = self.fc3(x)
         return x
 
@@ -98,6 +123,21 @@ def load_datasets(partition_id):
             ]
         )
         batch["img"] = [transform(img) for img in batch["img"]]
+    def apply_transform_train(batch):
+        transform_train = transforms.Compose([
+            transforms.RandomCrop(32, padding=4),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+        ])
+        batch["img"] = [transform_train(img) for img in batch["img"]]
+        return batch
+    def apply_transform_test(batch):
+        transform_test = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+        ])
+        batch["img"] = [transform_test(img) for img in batch["img"]]
         return batch
 
     partition = fds.load_partition(partition_id)
@@ -105,6 +145,14 @@ def load_datasets(partition_id):
     partition = partition.with_transform(apply_transform)
     trainloader = DataLoader(partition["train"], shuffle=True, batch_size=BATCH_SIZE)
     valloader = DataLoader(partition["test"], batch_size=BATCH_SIZE)
+    trainset = fds.load_partition(partition_id, "train")
+    trainset = trainset.with_transform(apply_transform_train)
+    #partition = partition.train_test_split(train_size=.8, seed=42)
+    
+    trainloader = DataLoader(trainset, shuffle=True, batch_size=BATCH_SIZE)
+    testset = fds.load_split("test")
+    testset = testset.with_transform(apply_transform_test)
+    valloader = DataLoader(testset, batch_size=BATCH_SIZE)
         
     return trainloader, valloader
 

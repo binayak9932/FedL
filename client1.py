@@ -10,7 +10,7 @@ from tqdm import tqdm
 from centralized import Net, train, test,load_datasets
 
 warnings.filterwarnings("ignore", category=UserWarning)
-DEVICE = torch.device("cuda")
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(
     f"Training on {DEVICE} using PyTorch {torch.__version__} and Flower {fl.__version__}"
 )
@@ -35,7 +35,7 @@ partition_id = parser.parse_known_args()[0].partition_id
 
 # Load model and data (simple CNN, CIFAR-10)
 
-trainloader, valloader = load_datasets(partition_id=partition_id)
+
 #net = Net().to(DEVICE)
 #trainloader = trainloaders[0]
 #valloader = valloaders[0]
@@ -57,7 +57,7 @@ class FlowerClient(NumPyClient):
 
     def fit(self, parameters, config):
         self.set_parameters(parameters)
-        train(self.net, self.trainloader, epochs=6, verbose=True)
+        train(self.net, self.trainloader, epochs=1, verbose=True)
         return self.get_parameters(config={}), len(self.trainloader.dataset), {}
 
     def evaluate(self, parameters, config):
@@ -83,9 +83,9 @@ if __name__ == "__main__":
     from flwr.client import start_client
 
     net = Net().to(DEVICE)
+    trainloader, valloader = load_datasets(partition_id=partition_id)
 
     start_client(
-        server_address="127.0.0.1:8080",    
-        #client_fn=client_fn,
+        server_address="127.0.0.1:8080",  # Use this if server and client are on the same machine
         client=FlowerClient(net, trainloader, valloader).to_client(),
-        )
+    )

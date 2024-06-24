@@ -14,7 +14,7 @@ from centralized import Net
 from flwr.server.client_manager import ClientManager
 import flwr as fl
 
-DEVICE = torch.device("cuda")
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 net = Net().to(DEVICE)
 num_clients=2
 
@@ -54,18 +54,22 @@ class SaveModelStrategy(fl.server.strategy.FedAvg):
     def initialize_parameters(
         self, client_manager: ClientManager
     ) -> Optional[Parameters]:
-        """Initialize global model parameters."""
-        
-        list_of_files = [fname for fname in glob.glob("./model_round_*")]
-        latest_round_file = max(list_of_files, key=os.path.getctime)
-        print("Loading pre-trained model from: ", latest_round_file)
-        state_dict = torch.load(latest_round_file)
-        net.load_state_dict(state_dict)
-        state_dict_ndarrays = [v.cpu().numpy() for v in net.state_dict().values()]
-        parameters = fl.common.ndarrays_to_parameters(state_dict_ndarrays)
-        initial_parameters = self.initial_parameters
-        self.initial_parameters =parameters  
-        return initial_parameters
+        # Initialize global model parameters.
+
+        try:
+            list_of_files = [fname for fname in glob.glob("./model_round_*")]
+            latest_round_file = max(list_of_files, key=os.path.getctime)
+            print("Loading pre-trained model from: ", latest_round_file)
+            state_dict = torch.load(latest_round_file)
+            net.load_state_dict(state_dict)
+            state_dict_ndarrays = [v.cpu().numpy() for v in net.state_dict().values()]
+            parameters = fl.common.ndarrays_to_parameters(state_dict_ndarrays)
+            initial_parameters = self.initial_parameters
+            self.initial_parameters =parameters  
+            return initial_parameters
+        except:
+            #initial_parameters = 
+            return None
     
 
 # Define metric aggregation function
@@ -77,13 +81,6 @@ def weighted_average(metrics: List[Tuple[int, Metrics]]) -> Metrics:
     # Aggregate and return custom metric (weighted average)
     return {"accuracy": sum(accuracies) / sum(examples)}
     
-    
-    
-
-    
-
-
-
 
 # Define strategy
 strategy = SaveModelStrategy(
@@ -97,7 +94,7 @@ strategy = SaveModelStrategy(
 
 
 # Define config
-config = ServerConfig(num_rounds=3)
+config = ServerConfig(num_rounds=2, round_timeout=3600)
 
 
 # Flower ServerApp
