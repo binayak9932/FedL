@@ -17,9 +17,11 @@ from flwr_datasets import FederatedDataset
 
 
 num_clients=2
+num_clients=10
 BATCH_SIZE=32
 
 DEVICE = torch.device("cuda")
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 class Net(nn.Module):
     def __init__(self) -> None:
         super(Net, self).__init__()
