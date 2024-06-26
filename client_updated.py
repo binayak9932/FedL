@@ -36,7 +36,7 @@ class XrayDataset(Dataset):
         self.root_dir = root_dir
         self.transform = transform
         self.classes = ['NORMAL', 'PNEUMONIA']
-        self.class_to_idx = {cls: idx for idx, cls in enumerate(self.classes)}
+        self.class_to_idx = {'NORMAL': 0, 'PNEUMONIA': 1}
         self.images = self._load_images()
 
     def _load_images(self):
@@ -72,8 +72,9 @@ class Net(nn.Module):
         self.bn4 = nn.BatchNorm2d(512)
         self.pool = nn.AdaptiveAvgPool2d((1, 1))
         self.fc1 = nn.Linear(512, 256)
-        self.fc2 = nn.Linear(256, 2)  # 2 classes: NORMAL and PNEUMONIA
+        self.fc2 = nn.Linear(256, 1)  
         self.dropout = nn.Dropout(0.5)
+        self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
         x = self.pool(F.relu(self.bn1(self.conv1(x))))
@@ -84,15 +85,16 @@ class Net(nn.Module):
         x = F.relu(self.fc1(x))
         x = self.dropout(x)
         x = self.fc2(x)
+        x = self.sigmoid(x)
         return x
 
 def train(net, trainloader, epochs: int, verbose=False):
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.BCELoss()
     optimizer = torch.optim.Adam(net.parameters(), lr=0.001)
     for epoch in range(epochs):
         correct, total, epoch_loss = 0, 0, 0.0
         for batch in tqdm(trainloader, "Training"):
-            images, labels = batch["img"].to(DEVICE), batch["label"].to(DEVICE)
+            images, labels = batch["img"].to(DEVICE), batch["label"].to(DEVICE).float().unsqueeze(1)
             optimizer.zero_grad()
             outputs = net(images)
             loss = criterion(outputs, labels)
@@ -101,27 +103,31 @@ def train(net, trainloader, epochs: int, verbose=False):
             # Metrics
             epoch_loss += loss.item()
             total += labels.size(0)
-            correct += (torch.max(outputs.data, 1)[1] == labels).sum().item()
+            predicted = (outputs > 0.5).float()
+            correct += (predicted == labels).sum().item()
         epoch_loss /= len(trainloader.dataset)
         epoch_acc = correct / total * 100
         if verbose:
             print(f"Epoch {epoch+1}: train loss {epoch_loss}, accuracy {epoch_acc}")
-
+            
+            
 def test(net, testloader):
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.BCELoss()
     correct, total, loss = 0, 0, 0.0
     net.eval()
     with torch.no_grad():
         for batch in tqdm(testloader, "Testing"):
-            images, labels = batch["img"].to(DEVICE), batch["label"].to(DEVICE)
+            images, labels = batch["img"].to(DEVICE), batch["label"].to(DEVICE).float().unsqueeze(1)
             outputs = net(images)
             loss += criterion(outputs, labels).item()
-            _, predicted = torch.max(outputs.data, 1)
+            predicted = (outputs > 0.5).float()
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
     loss /= len(testloader.dataset)
     accuracy = correct / total
     return loss, accuracy
+
+
 
 def load_datasets(data_dir):
     transform = transforms.Compose([

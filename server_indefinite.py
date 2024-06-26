@@ -19,6 +19,7 @@ import flwr as fl
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 num_clients = 2
 
+
 class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
@@ -32,8 +33,9 @@ class Net(nn.Module):
         self.bn4 = nn.BatchNorm2d(512)
         self.pool = nn.AdaptiveAvgPool2d((1, 1))
         self.fc1 = nn.Linear(512, 256)
-        self.fc2 = nn.Linear(256, 2)  # 2 classes: NORMAL and PNEUMONIA
+        self.fc2 = nn.Linear(256, 1)  
         self.dropout = nn.Dropout(0.5)
+        self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
         x = self.pool(F.relu(self.bn1(self.conv1(x))))
@@ -44,6 +46,7 @@ class Net(nn.Module):
         x = F.relu(self.fc1(x))
         x = self.dropout(x)
         x = self.fc2(x)
+        x = self.sigmoid(x)
         return x
 
 net = Net().to(DEVICE)
