@@ -123,7 +123,7 @@ strategy = SaveModelStrategy(
 
 
 # Define config
-config = ServerConfig(num_rounds=5, round_timeout=3600)
+config = ServerConfig(num_rounds=5, round_timeout=7200)
 
 
 # Flower ServerApp
